@@ -21,6 +21,7 @@ void BleSensor::scanAndConnect()
         else
         {
             std::cout << "Powering bluetooth ON\n";
+            setBluetoothStatus(true);
         }
     }
     catch (sdbus::Error &error)
@@ -32,9 +33,6 @@ void BleSensor::scanAndConnect()
 bool BleSensor::getBluetoothStatus()
 {
     const std::string METHOD_GET{"Get"};
-    const std::string INTERFACE_PROPERTIES{"org.freedesktop.DBus.Properties"};
-    const std::string INTERFACE_ADAPTER{"org.bluez.Adapter1"};
-    const std::string PROPERTY_POWERED{"Powered"};
     sdbus::Variant variant;
     // Invoke a method that gets a property as a variant
     bluezProxy->callMethod(METHOD_GET)
@@ -42,4 +40,15 @@ bool BleSensor::getBluetoothStatus()
         .withArguments(INTERFACE_ADAPTER, PROPERTY_POWERED)
         .storeResultsTo(variant);
     return (bool)variant;
+}
+
+void BleSensor::setBluetoothStatus(bool enable)
+{
+    const std::string METHOD_SET{"Set"};
+    // Invoke a method that sets a property as a variant
+    bluezProxy->callMethod(METHOD_SET)
+        .onInterface(INTERFACE_PROPERTIES)
+        .withArguments(INTERFACE_ADAPTER, PROPERTY_POWERED, sdbus::Variant(enable))
+        // .dontExpectReply();
+        .storeResultsTo();
 }
