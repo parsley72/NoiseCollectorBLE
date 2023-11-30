@@ -1,5 +1,7 @@
 #include "BleSensor.h"
 #include <iostream>
+#include <chrono>
+#include <thread>
 
 BleSensor::BleSensor()
 {
@@ -23,6 +25,10 @@ void BleSensor::scanAndConnect()
             std::cout << "Powering bluetooth ON\n";
             setBluetoothStatus(true);
         }
+        enableScanning(true);
+        // Wait to be connected to the sensor
+        std::this_thread::sleep_for(std::chrono::seconds(10));
+        enableScanning(false);
     }
     catch (sdbus::Error &error)
     {
@@ -51,4 +57,14 @@ void BleSensor::setBluetoothStatus(bool enable)
         .withArguments(INTERFACE_ADAPTER, PROPERTY_POWERED, sdbus::Variant(enable))
         // .dontExpectReply();
         .storeResultsTo();
+}
+
+void BleSensor::enableScanning(bool enable)
+{
+    const std::string METHOD_START_DISCOVERY{"StartDiscovery"};
+    const std::string METHOD_STOP_DISCOVERY{"StopDiscovery"};
+    std::cout << (enable ? "Start" : "Stop") << " scanning\n";
+    bluezProxy->callMethod(enable ? METHOD_START_DISCOVERY : METHOD_STOP_DISCOVERY)
+        .onInterface(INTERFACE_ADAPTER)
+        .dontExpectReply();
 }

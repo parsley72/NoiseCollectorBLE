@@ -12,6 +12,7 @@ private:
     std::unique_ptr<sdbus::IProxy> bluezProxy;
     bool getBluetoothStatus();
     void setBluetoothStatus(bool enable);
+    void enableScanning(bool enable);
 
 public:
     BleSensor();
