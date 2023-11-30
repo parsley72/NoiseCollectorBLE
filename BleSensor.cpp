@@ -2,6 +2,7 @@
 #include <iostream>
 #include <chrono>
 #include <thread>
+#include <regex>
 
 BleSensor::BleSensor()
 {
@@ -9,10 +10,12 @@ BleSensor::BleSensor()
     const std::string OBJECT_PATH{"/org/bluez/hci0"};
 
     bluezProxy = sdbus::createProxy(SERVICE_BLUEZ, OBJECT_PATH);
+    rootProxy = sdbus::createProxy(SERVICE_BLUEZ, "/");
 }
 
 void BleSensor::scanAndConnect()
 {
+    std::cout << "(TID: " << std::this_thread::get_id() << ") ";
     try
     {
         // Enable Bluetooth if not yet enabled
@@ -25,6 +28,7 @@ void BleSensor::scanAndConnect()
             std::cout << "Powering bluetooth ON\n";
             setBluetoothStatus(true);
         }
+        subscribeToInterfacesAdded();
         enableScanning(true);
         // Wait to be connected to the sensor
         std::this_thread::sleep_for(std::chrono::seconds(10));
@@ -67,4 +71,40 @@ void BleSensor::enableScanning(bool enable)
     bluezProxy->callMethod(enable ? METHOD_START_DISCOVERY : METHOD_STOP_DISCOVERY)
         .onInterface(INTERFACE_ADAPTER)
         .dontExpectReply();
+}
+
+void BleSensor::subscribeToInterfacesAdded()
+{
+    const std::string INTERFACE_OBJ_MGR{"org.freedesktop.DBus.ObjectManager"};
+    const std::string MEMBER_IFACE_ADDED{"InterfacesAdded"};
+    auto interfaceAddedCallback = [this](sdbus::ObjectPath path,
+                                         std::map<std::string,
+                                                  std::map<std::string, sdbus::Variant>>
+                                             dictionary)
+    {
+        const std::regex DEVICE_INSTANCE_RE{"^/org/bluez/hci[0-9]/dev(_[0-9A-F]{2}){6}$"};
+        std::smatch match;
+        std::cout << "(TID: " << std::this_thread::get_id() << ") ";
+        if (std::regex_match(path, match, DEVICE_INSTANCE_RE))
+        {
+            std::cout << "Device iface ";
+
+            if (dictionary["org.bluez.Device1"].count("Name") == 1)
+            {
+                auto name = (std::string)(dictionary["org.bluez.Device1"].at("Name"));
+                std::cout << name << " @ " << path << std::endl;
+            }
+            else
+            {
+                std::cout << "<NAMELESS> @ " << path << std::endl;
+            }
+        }
+        else
+        {
+            std::cout << "*** UNEXPECTED SIGNAL ***";
+        }
+    };
+    // Let's subscribe for the interfaces added signals (AddMatch)
+    rootProxy->uponSignal(MEMBER_IFACE_ADDED).onInterface(INTERFACE_OBJ_MGR).call(interfaceAddedCallback);
+    rootProxy->finishRegistration();
 }
