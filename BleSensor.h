@@ -14,6 +14,7 @@ private:
     std::unique_ptr<sdbus::IProxy> bluezProxy;
     std::unique_ptr<sdbus::IProxy> rootProxy;
     std::unique_ptr<sdbus::IProxy> deviceProxy;
+    std::unique_ptr<sdbus::IProxy> tempAttrProxy;
     std::mutex mtx;
     std::condition_variable cv;
     bool connected;
@@ -23,10 +24,13 @@ private:
     void enableScanning(bool enable);
     void subscribeToInterfacesAdded();
     void connectToDevice(sdbus::ObjectPath path);
+    void readTemperature();
+    float valueFromIeee11073(std::vector<std::uint8_t> binary);
 
 public:
     BleSensor(const std::string &sensor_name);
     void scanAndConnect();
+    void getValue();
 };
 
 #endif //  BLE_SENSOR_H

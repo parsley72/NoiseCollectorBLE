@@ -3,10 +3,11 @@
 #include <chrono>
 #include <thread>
 #include <regex>
+#include <cmath>
 
 BleSensor::BleSensor(const std::string &sensor_name)
-    : deviceProxy{nullptr}, deviceName{sensor_name},
-      cv{}, mtx{}, connected{false}
+    : deviceProxy{nullptr}, tempAttrProxy{nullptr},
+      cv{}, mtx{}, connected{false}, deviceName{sensor_name}
 {
     const std::string OBJECT_PATH{"/org/bluez/hci0"};
 
@@ -41,6 +42,11 @@ void BleSensor::scanAndConnect()
     {
         std::cerr << "ERR: on scanAndConnect(): " << error.getName() << " with message " << error.getMessage() << std::endl;
     }
+}
+
+void BleSensor::getValue()
+{
+    readTemperature();
 }
 
 bool BleSensor::getBluetoothStatus()
@@ -86,30 +92,55 @@ void BleSensor::subscribeToInterfacesAdded()
                                              dictionary)
     {
         const std::regex DEVICE_INSTANCE_RE{"^/org/bluez/hci[0-9]/dev(_[0-9A-F]{2}){6}$"};
+        const std::regex DEVICE_ATTRS_RE{"^/org/bluez/hci\\d/dev(_[0-9A-F]{2}){6}/service\\d{4}/char\\d{4}"};
         std::smatch match;
         std::cout << "(TID: " << std::this_thread::get_id() << ") ";
-        if (std::regex_match(path, match, DEVICE_INSTANCE_RE))
+        if (!connected)
         {
-            std::cout << "Device iface ";
-
-            if (dictionary["org.bluez.Device1"].count("Name") == 1)
+            if (std::regex_match(path, match, DEVICE_INSTANCE_RE))
             {
-                auto name = (std::string)(dictionary["org.bluez.Device1"].at("Name"));
-                std::cout << name << " @ " << path << std::endl;
-                if (name == deviceName)
+                std::cout << "Device iface ";
+
+                if (dictionary["org.bluez.Device1"].count("Name") == 1)
                 {
-                    std::cout << "Connecting to " << name << std::endl;
-                    connectToDevice(path);
+                    auto name = (std::string)(dictionary["org.bluez.Device1"].at("Name"));
+                    std::cout << name << " @ " << path << std::endl;
+                    if (name == deviceName)
+                    {
+                        std::cout << "Connecting to " << name << std::endl;
+                        connectToDevice(path);
+                    }
+                }
+                else
+                {
+                    std::cout << "<NAMELESS> @ " << path << std::endl;
                 }
             }
             else
             {
-                std::cout << "<NAMELESS> @ " << path << std::endl;
+                std::cout << "*** UNEXPECTED SIGNAL ***";
             }
         }
         else
         {
-            std::cout << "*** UNEXPECTED SIGNAL ***";
+            if (std::regex_match(path, match, DEVICE_ATTRS_RE))
+            {
+                std::cout << "Characteristic " << path << std::endl;
+                if ((dictionary.count("org.bluez.GattCharacteristic1") == 1) &&
+                    (dictionary["org.bluez.GattCharacteristic1"].count("UUID") == 1))
+                {
+                    auto name = (std::string)(dictionary["org.bluez.GattCharacteristic1"].at("UUID"));
+                    if (name == "00002a1c-0000-1000-8000-00805f9b34fb")
+                    {
+                        tempAttrProxy = sdbus::createProxy(SERVICE_BLUEZ, path);
+                        std::cout << "<<<FOUND>>> " << path << std::endl;
+                    }
+                }
+            }
+            else
+            {
+                std::cout << "Not a characteristic" << std::endl;
+            }
         }
     };
     // Let's subscribe for the interfaces added signals (AddMatch)
@@ -140,4 +171,39 @@ void BleSensor::connectToDevice(sdbus::ObjectPath path)
     deviceProxy = sdbus::createProxy(SERVICE_BLUEZ, path);
     deviceProxy->callMethodAsync(METHOD_CONNECT).onInterface(INTERFACE_DEVICE).uponReplyInvoke(connectionCallback);
     std::cout << "Connection method started" << std::endl;
+}
+
+void BleSensor::readTemperature()
+{
+    const std::string INTERFACE_CHAR{"org.bluez.GattCharacteristic1"};
+    const std::string METHOD_READ{"ReadValue"};
+    std::map<std::string, sdbus::Variant> args{{{"offset", sdbus::Variant{std::uint16_t{0}}}}};
+    std::vector<std::uint8_t> result;
+    tempAttrProxy->callMethod(METHOD_READ)
+        .onInterface(INTERFACE_CHAR)
+        .withArguments(args)
+        .storeResultsTo(result);
+    std::cout << "READ: ";
+    for (auto value : result)
+    {
+        std::cout << +value << " ";
+    }
+    std::vector number(result.begin() + 1, result.end());
+    std::cout << "\nTemp: " << valueFromIeee11073(number);
+    std::cout << std::endl;
+}
+
+float BleSensor::valueFromIeee11073(std::vector<std::uint8_t> binary)
+{
+    float value = static_cast<float>(binary[0]) + static_cast<float>(binary[1]) * 256.f + static_cast<float>(binary[2]) * 256.f * 256.f;
+    float exponent;
+    if (binary[3] > 127)
+    {
+        exponent = static_cast<float>(binary[3]) - 256.f;
+    }
+    else
+    {
+        exponent = static_cast<float>(binary[3]);
+    }
+    return value * pow(10, exponent);
 }
