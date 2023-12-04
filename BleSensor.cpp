@@ -4,9 +4,10 @@
 #include <thread>
 #include <regex>
 
-BleSensor::BleSensor()
+BleSensor::BleSensor(const std::string &sensor_name)
+    : deviceProxy{nullptr}, deviceName{sensor_name},
+      cv{}, mtx{}, connected{false}
 {
-    const std::string SERVICE_BLUEZ{"org.bluez"};
     const std::string OBJECT_PATH{"/org/bluez/hci0"};
 
     bluezProxy = sdbus::createProxy(SERVICE_BLUEZ, OBJECT_PATH);
@@ -28,10 +29,12 @@ void BleSensor::scanAndConnect()
             std::cout << "Powering bluetooth ON\n";
             setBluetoothStatus(true);
         }
+        std::unique_lock<std::mutex> lock(mtx);
         subscribeToInterfacesAdded();
         enableScanning(true);
         // Wait to be connected to the sensor
-        std::this_thread::sleep_for(std::chrono::seconds(10));
+        cv.wait(lock, [this]()
+                { return connected; });
         enableScanning(false);
     }
     catch (sdbus::Error &error)
@@ -93,6 +96,11 @@ void BleSensor::subscribeToInterfacesAdded()
             {
                 auto name = (std::string)(dictionary["org.bluez.Device1"].at("Name"));
                 std::cout << name << " @ " << path << std::endl;
+                if (name == deviceName)
+                {
+                    std::cout << "Connecting to " << name << std::endl;
+                    connectToDevice(path);
+                }
             }
             else
             {
@@ -107,4 +115,29 @@ void BleSensor::subscribeToInterfacesAdded()
     // Let's subscribe for the interfaces added signals (AddMatch)
     rootProxy->uponSignal(MEMBER_IFACE_ADDED).onInterface(INTERFACE_OBJ_MGR).call(interfaceAddedCallback);
     rootProxy->finishRegistration();
+}
+
+void BleSensor::connectToDevice(sdbus::ObjectPath path)
+{
+    const std::string INTERFACE_DEVICE{"org.bluez.Device1"};
+    const std::string METHOD_CONNECT{"Connect"};
+    auto connectionCallback = [this](const sdbus::Error *error)
+    {
+        if (error != nullptr)
+        {
+            std::cerr << "Got connection error "
+                      << error->getName() << " with message "
+                      << error->getMessage() << std::endl;
+            return;
+        }
+        std::unique_lock<std::mutex> lock(mtx);
+        std::cout << "Connected!!!" << std::endl;
+        connected = true;
+        lock.unlock();
+        cv.notify_one();
+        std::cout << "Finished connection method call" << std::endl;
+    };
+    deviceProxy = sdbus::createProxy(SERVICE_BLUEZ, path);
+    deviceProxy->callMethodAsync(METHOD_CONNECT).onInterface(INTERFACE_DEVICE).uponReplyInvoke(connectionCallback);
+    std::cout << "Connection method started" << std::endl;
 }
