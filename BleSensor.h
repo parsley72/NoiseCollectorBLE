@@ -26,11 +26,13 @@ private:
     void connectToDevice(sdbus::ObjectPath path);
     void readTemperature();
     float valueFromIeee11073(std::vector<std::uint8_t> binary);
+    void disconnectFromDevice();
 
 public:
     BleSensor(const std::string &sensor_name);
     void scanAndConnect();
     void getValue();
+    void disconnect();
 };
 
 #endif //  BLE_SENSOR_H

@@ -49,6 +49,12 @@ void BleSensor::getValue()
     readTemperature();
 }
 
+void BleSensor::disconnect()
+{
+    std::cout << "Disconnecting from device";
+    disconnectFromDevice();
+}
+
 bool BleSensor::getBluetoothStatus()
 {
     const std::string METHOD_GET{"Get"};
@@ -206,4 +212,30 @@ float BleSensor::valueFromIeee11073(std::vector<std::uint8_t> binary)
         exponent = static_cast<float>(binary[3]);
     }
     return value * pow(10, exponent);
+}
+
+void BleSensor::disconnectFromDevice()
+{
+    const std::string INTERFACE_DEVICE{"org.bluez.Device1"};
+    const std::string METHOD_DISCONNECT{"Disconnect"};
+
+    auto disconnectionCallback = [this](const sdbus::Error *error)
+    {
+        if (error != nullptr)
+        {
+            std::cerr << "Got disconnection error " << error->getName() << " with message " << error->getMessage() << std::endl;
+            return;
+        }
+        std::unique_lock<std::mutex> lock(mtx);
+        std::cout << "Disconnected!!!" << std::endl;
+        connected = false;
+        deviceProxy = nullptr;
+        lock.unlock();
+        std::cout << "Finished connection method call" << std::endl;
+    };
+
+    {
+        deviceProxy->callMethodAsync(METHOD_DISCONNECT).onInterface(INTERFACE_DEVICE).uponReplyInvoke(disconnectionCallback);
+        std::cout << "Disconnection method started" << std::endl;
+    }
 }
