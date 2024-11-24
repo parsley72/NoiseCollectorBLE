@@ -234,6 +234,7 @@ void BleSensor::disconnectFromDevice()
         std::cout << "Finished connection method call" << std::endl;
     };
 
+    if (deviceProxy)
     {
         deviceProxy->callMethodAsync(METHOD_DISCONNECT).onInterface(INTERFACE_DEVICE).uponReplyInvoke(disconnectionCallback);
         std::cout << "Disconnection method started" << std::endl;
