@@ -97,8 +97,8 @@ void BleSensor::subscribeToInterfacesAdded()
                                                   std::map<std::string, sdbus::Variant>>
                                              dictionary)
     {
-        const std::regex DEVICE_INSTANCE_RE{"^/org/bluez/hci[0-9]/dev(_[0-9A-F]{2}){6}$"};
-        const std::regex DEVICE_ATTRS_RE{"^/org/bluez/hci\\d/dev(_[0-9A-F]{2}){6}/service\\d{4}/char\\d{4}"};
+        const std::regex DEVICE_INSTANCE_RE{"^/org/bluez/hci\\d+/dev(_[0-9A-Fa-f]{2}){6}$"};
+        const std::regex DEVICE_ATTRS_RE{"^/org/bluez/hci\\d+/dev(_[0-9A-Fa-f]{2}){6}/service[0-9A-Fa-f]{4}/char[0-9A-Fa-f]{4}"};
         std::smatch match;
         std::cout << "(TID: " << std::this_thread::get_id() << ") ";
         if (!connected)
