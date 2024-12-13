@@ -6,13 +6,13 @@
 #include <cmath>
 
 BleSensor::BleSensor(const std::string &sensor_name)
-    : deviceProxy{nullptr}, tempAttrProxy{nullptr},
-      cv{}, mtx{}, connected{false}, deviceName{sensor_name}
+    : _deviceProxy{nullptr}, _tempAttrProxy{nullptr},
+      _cv{}, _mtx{}, _connected{false}, _deviceName{sensor_name}
 {
     const std::string OBJECT_PATH{"/org/bluez/hci0"};
 
-    bluezProxy = sdbus::createProxy(SERVICE_BLUEZ, OBJECT_PATH);
-    rootProxy = sdbus::createProxy(SERVICE_BLUEZ, "/");
+    _bluezProxy = sdbus::createProxy(SERVICE_BLUEZ, OBJECT_PATH);
+    _rootProxy = sdbus::createProxy(SERVICE_BLUEZ, "/");
 }
 
 void BleSensor::scanAndConnect()
@@ -30,12 +30,12 @@ void BleSensor::scanAndConnect()
             std::cout << "Powering bluetooth ON\n";
             setBluetoothStatus(true);
         }
-        std::unique_lock<std::mutex> lock(mtx);
+        std::unique_lock<std::mutex> lock(_mtx);
         subscribeToInterfacesAdded();
         enableScanning(true);
         // Wait to be connected to the sensor
-        cv.wait(lock, [this]()
-                { return connected; });
+        _cv.wait(lock, [this]()
+                { return _connected; });
         enableScanning(false);
     }
     catch (sdbus::Error &error)
@@ -60,7 +60,7 @@ bool BleSensor::getBluetoothStatus()
     const std::string METHOD_GET{"Get"};
     sdbus::Variant variant;
     // Invoke a method that gets a property as a variant
-    bluezProxy->callMethod(METHOD_GET)
+    _bluezProxy->callMethod(METHOD_GET)
         .onInterface(INTERFACE_PROPERTIES)
         .withArguments(INTERFACE_ADAPTER, PROPERTY_POWERED)
         .storeResultsTo(variant);
@@ -71,7 +71,7 @@ void BleSensor::setBluetoothStatus(bool enable)
 {
     const std::string METHOD_SET{"Set"};
     // Invoke a method that sets a property as a variant
-    bluezProxy->callMethod(METHOD_SET)
+    _bluezProxy->callMethod(METHOD_SET)
         .onInterface(INTERFACE_PROPERTIES)
         .withArguments(INTERFACE_ADAPTER, PROPERTY_POWERED, sdbus::Variant(enable))
         // .dontExpectReply();
@@ -83,7 +83,7 @@ void BleSensor::enableScanning(bool enable)
     const std::string METHOD_START_DISCOVERY{"StartDiscovery"};
     const std::string METHOD_STOP_DISCOVERY{"StopDiscovery"};
     std::cout << (enable ? "Start" : "Stop") << " scanning\n";
-    bluezProxy->callMethod(enable ? METHOD_START_DISCOVERY : METHOD_STOP_DISCOVERY)
+    _bluezProxy->callMethod(enable ? METHOD_START_DISCOVERY : METHOD_STOP_DISCOVERY)
         .onInterface(INTERFACE_ADAPTER)
         .dontExpectReply();
 }
@@ -101,7 +101,7 @@ void BleSensor::subscribeToInterfacesAdded()
         const std::regex DEVICE_ATTRS_RE{"^/org/bluez/hci\\d+/dev(_[0-9A-Fa-f]{2}){6}/service[0-9A-Fa-f]{4}/char[0-9A-Fa-f]{4}"};
         std::smatch match;
         std::cout << "(TID: " << std::this_thread::get_id() << ") ";
-        if (!connected)
+        if (!_connected)
         {
             if (std::regex_match(path, match, DEVICE_INSTANCE_RE))
             {
@@ -111,7 +111,7 @@ void BleSensor::subscribeToInterfacesAdded()
                 {
                     auto name = (std::string)(dictionary["org.bluez.Device1"].at("Name"));
                     std::cout << name << " @ " << path << std::endl;
-                    if (name == deviceName)
+                    if (name == _deviceName)
                     {
                         std::cout << "Connecting to " << name << std::endl;
                         connectToDevice(path);
@@ -138,7 +138,7 @@ void BleSensor::subscribeToInterfacesAdded()
                     auto name = (std::string)(dictionary["org.bluez.GattCharacteristic1"].at("UUID"));
                     if (name == "00002a1c-0000-1000-8000-00805f9b34fb")
                     {
-                        tempAttrProxy = sdbus::createProxy(SERVICE_BLUEZ, path);
+                        _tempAttrProxy = sdbus::createProxy(SERVICE_BLUEZ, path);
                         std::cout << "<<<FOUND>>> " << path << std::endl;
                     }
                 }
@@ -150,8 +150,8 @@ void BleSensor::subscribeToInterfacesAdded()
         }
     };
     // Let's subscribe for the interfaces added signals (AddMatch)
-    rootProxy->uponSignal(MEMBER_IFACE_ADDED).onInterface(INTERFACE_OBJ_MGR).call(interfaceAddedCallback);
-    rootProxy->finishRegistration();
+    _rootProxy->uponSignal(MEMBER_IFACE_ADDED).onInterface(INTERFACE_OBJ_MGR).call(interfaceAddedCallback);
+    _rootProxy->finishRegistration();
 }
 
 void BleSensor::connectToDevice(sdbus::ObjectPath path)
@@ -167,15 +167,15 @@ void BleSensor::connectToDevice(sdbus::ObjectPath path)
                       << error->getMessage() << std::endl;
             return;
         }
-        std::unique_lock<std::mutex> lock(mtx);
+        std::unique_lock<std::mutex> lock(_mtx);
         std::cout << "Connected!!!" << std::endl;
-        connected = true;
+        _connected = true;
         lock.unlock();
-        cv.notify_one();
+        _cv.notify_one();
         std::cout << "Finished connection method call" << std::endl;
     };
-    deviceProxy = sdbus::createProxy(SERVICE_BLUEZ, path);
-    deviceProxy->callMethodAsync(METHOD_CONNECT).onInterface(INTERFACE_DEVICE).uponReplyInvoke(connectionCallback);
+    _deviceProxy = sdbus::createProxy(SERVICE_BLUEZ, path);
+    _deviceProxy->callMethodAsync(METHOD_CONNECT).onInterface(INTERFACE_DEVICE).uponReplyInvoke(connectionCallback);
     std::cout << "Connection method started" << std::endl;
 }
 
@@ -185,7 +185,7 @@ void BleSensor::readTemperature()
     const std::string METHOD_READ{"ReadValue"};
     std::map<std::string, sdbus::Variant> args{{{"offset", sdbus::Variant{std::uint16_t{0}}}}};
     std::vector<std::uint8_t> result;
-    tempAttrProxy->callMethod(METHOD_READ)
+    _tempAttrProxy->callMethod(METHOD_READ)
         .onInterface(INTERFACE_CHAR)
         .withArguments(args)
         .storeResultsTo(result);
@@ -226,17 +226,17 @@ void BleSensor::disconnectFromDevice()
             std::cerr << "Got disconnection error " << error->getName() << " with message " << error->getMessage() << std::endl;
             return;
         }
-        std::unique_lock<std::mutex> lock(mtx);
+        std::unique_lock<std::mutex> lock(_mtx);
         std::cout << "Disconnected!!!" << std::endl;
-        connected = false;
-        deviceProxy = nullptr;
+        _connected = false;
+        _deviceProxy = nullptr;
         lock.unlock();
         std::cout << "Finished connection method call" << std::endl;
     };
 
-    if (deviceProxy)
+    if (_deviceProxy)
     {
-        deviceProxy->callMethodAsync(METHOD_DISCONNECT).onInterface(INTERFACE_DEVICE).uponReplyInvoke(disconnectionCallback);
+        _deviceProxy->callMethodAsync(METHOD_DISCONNECT).onInterface(INTERFACE_DEVICE).uponReplyInvoke(disconnectionCallback);
         std::cout << "Disconnection method started" << std::endl;
     }
 }

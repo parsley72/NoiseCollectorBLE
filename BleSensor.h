@@ -11,14 +11,15 @@ private:
     inline static const std::string INTERFACE_ADAPTER{"org.bluez.Adapter1"};
     inline static const std::string PROPERTY_POWERED{"Powered"};
     inline static const std::string INTERFACE_PROPERTIES{"org.freedesktop.DBus.Properties"};
-    std::unique_ptr<sdbus::IProxy> bluezProxy;
-    std::unique_ptr<sdbus::IProxy> rootProxy;
-    std::unique_ptr<sdbus::IProxy> deviceProxy;
-    std::unique_ptr<sdbus::IProxy> tempAttrProxy;
-    std::mutex mtx;
-    std::condition_variable cv;
-    bool connected;
-    const std::string deviceName;
+    std::unique_ptr<sdbus::IProxy> _bluezProxy;
+    std::unique_ptr<sdbus::IProxy> _rootProxy;
+    std::unique_ptr<sdbus::IProxy> _deviceProxy;
+    std::unique_ptr<sdbus::IProxy> _tempAttrProxy;
+    std::mutex _mtx;
+    std::condition_variable _cv;
+    bool _connected;
+    const std::string _deviceName;
+
     bool getBluetoothStatus();
     void setBluetoothStatus(bool enable);
     void enableScanning(bool enable);
